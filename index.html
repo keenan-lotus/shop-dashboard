@@ -2,65 +2,134 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Shop Dashboard — Test (Nashville 7-Day)</title>
+  <title>Shop Dashboard — Nashville</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
-      /* Adjust these two if you ever want to fine-tune the weather view */
-      --weather-scale: 1.12;   /* zoom in/out of the widget (1 = no zoom) */
-      --weather-offset: -6%;   /* move widget up/down inside the 20% band */
+      /* Adjust the split here if you want more/less weather space */
+      --top-percent: 75vh;   /* top area height (sheet) */
+      --bottom-percent: calc(100vh - var(--top-percent)); /* weather auto-fills rest */
     }
-    html, body { height: 100%; margin: 0; background: #000; }
-    .wrap {
-      display: grid;
-      grid-template-rows: 80% 20%;   /* top/bottom split */
-      height: 100vh; width: 100vw;
-    }
-    /* TOP: spreadsheet */
-    #sheetBox { width:100%; height:100%; overflow:hidden; background:#000; }
-    #sheet    { border:0; width:100%; height:100%; background:#000; }
+    html, body { height: 100%; margin: 0; background:#000; color:#fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    .wrap { height: 100vh; width: 100vw; display: grid; grid-template-rows: var(--top-percent) var(--bottom-percent); }
 
-    /* BOTTOM: weather with visual crop (no scrollbars) */
-    #weatherPane { width:100%; height:100%; background:#000; overflow:hidden; position:relative; }
-    .cropbox { position:relative; width:100%; height:100%; overflow:hidden; }
-    .cropbox iframe {
-      position:absolute; inset:0;
-      width:110%;                /* a little wider so edges aren't visible */
-      height:130%;               /* taller than container to avoid scroll */
-      border:0; display:block;
-      transform: translateY(var(--weather-offset)) scale(var(--weather-scale));
-      transform-origin: top center;  /* zoom from the top edge */
-    }
+    /* TOP: Google Sheet */
+    #sheetBox { background:#000; overflow:hidden; }
+    #sheet { border:0; width:100%; height:100%; background:#000; }
 
-    /* Hide page scrollbars for a cleaner TV look (won’t affect iframe internals) */
+    /* BOTTOM: Custom 7-day forecast */
+    #weather { background:#0b0b0b; height:100%; width:100%; display:grid; grid-template-columns: repeat(7, 1fr); gap:0; }
+    .day {
+      display:grid; grid-template-rows: 1.2fr 0.8fr 0.6fr; /* icon / hi / lo */
+      align-items:center; justify-items:center; height:100%;
+      border-left: 1px solid rgba(255,255,255,0.08);
+    }
+    .day:first-child { border-left:none; }
+    .dow { font-size: 0.95rem; opacity: 0.9; margin-top: 2px; }
+    .icon { font-size: 1.8rem; line-height: 1; }
+    .hi   { font-size: 1.2rem; font-weight: 700; }
+    .lo   { font-size: 0.95rem; opacity: 0.9; margin-bottom: 4px; }
+
+    /* color the high temp bar subtly; redder when hotter */
+    .hi.hot    { color:#ff6b6b; }   /* 90+ */
+    .hi.warm   { color:#ffa94d; }   /* 80-89 */
+    .hi.cool   { color:#4dabf7; }   /* below 80 */
+
+    /* Hide page scrollbars for a cleaner TV look */
     ::-webkit-scrollbar { width:0; height:0; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <!-- TOP 80%: Published Google Sheet -->
+    <!-- TOP: Published Google Sheet -->
     <div id="sheetBox">
       <iframe
         id="sheet"
-        src="https://docs.google.com/spreadsheets/d/e/2PACX-1vSBrgvQHdcw5mVUfRSSewO0BQ3pNcbL2WAAb5WshzX1LVv0Ht2TVnMSyp5WME5oiTvBrsrVN2wtrfE8/pubhtml?gid=0&single=true">
+        src="https://docs.google.com/spreadsheets/d/e/2PACX-1vTjgGLB8JhGMcUzYI5H8VErNy-ZSEPu7CvPygo30HEPe4HnyjsAPxsKQZnOz_0e5AeDxXW5Ea8JAxFv/pubhtml?gid=0&single=true">
       </iframe>
     </div>
 
-    <!-- BOTTOM 20%: Nashville 7-day forecast (meteoblue) with cropping -->
-    <div id="weatherPane">
-      <div class="cropbox">
-        <iframe
-          id="weather"
-          src="https://www.meteoblue.com/en/weather/widget/daily/nashville_united-states_4644585?geoloc=disabled&days=7&tempunit=FAHRENHEIT&windunit=mph&layout=simple&cols=2&precipunit=inch&timezone=America%2FChicago"
-          title="Nashville 7-Day Forecast">
-        </iframe>
-      </div>
-    </div>
+    <!-- BOTTOM: Native 7-day forecast (Open-Meteo) -->
+    <div id="weather" aria-label="7-day weather for Nashville, TN"></div>
   </div>
 
-  <!-- Optional: auto-refresh the sheet every 5 minutes so it stays live -->
   <script>
-    const SHEET_REFRESH_MS = 5 * 60 * 1000; // set to 0 to disable
+    /* ===== Nashville Forecast via Open-Meteo (no API key) ===== */
+    const LAT = 36.1627, LON = -86.7816, TZ = 'America/Chicago';
+    const UNITS = 'fahrenheit'; // 'fahrenheit' or 'celsius'
+    const WIND  = 'mph';        // mph, kmh, ms, kn
+    const REFRESH_MS = 30 * 60 * 1000; // re-fetch every 30 min
+
+    const weatherEl = document.getElementById('weather');
+
+    const WMO_MAP = [
+      {codes:[0], i:'☀️', t:'Clear'},
+      {codes:[1,2], i:'🌤️', t:'Partly cloudy'},
+      {codes:[3], i:'☁️', t:'Overcast'},
+      {codes:[45,48], i:'🌫️', t:'Fog'},
+      {codes:[51,53,55], i:'🌦️', t:'Drizzle'},
+      {codes:[56,57], i:'🌧️', t:'Freezing drizzle'},
+      {codes:[61,63,65], i:'🌧️', t:'Rain'},
+      {codes:[66,67], i:'🌧️', t:'Freezing rain'},
+      {codes:[71,73,75,77], i:'❄️', t:'Snow'},
+      {codes:[80,81,82], i:'🌦️', t:'Showers'},
+      {codes:[85,86], i:'❄️', t:'Snow showers'},
+      {codes:[95], i:'⛈️', t:'Thunderstorm'},
+      {codes:[96,99], i:'⛈️', t:'Thunderstorm w/ hail'},
+    ];
+    function iconFor(code){
+      for (const g of WMO_MAP) if (g.codes.includes(code)) return g.i;
+      return '❓';
+    }
+    function hiClass(tempF){
+      if (tempF >= 90) return 'hot';
+      if (tempF >= 80) return 'warm';
+      return 'cool';
+    }
+    function dowLabel(dateStr){
+      const d = new Date(dateStr + 'T12:00:00'); // avoid TZ midnight issues
+      return d.toLocaleDateString('en-US', { weekday: 'short', timeZone: TZ });
+    }
+
+    async function loadForecast(){
+      try{
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`
+          + `&daily=weathercode,temperature_2m_max,temperature_2m_min`
+          + `&temperature_unit=${UNITS}&windspeed_unit=${WIND}&timezone=${encodeURIComponent(TZ)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const days = data.daily.time.length;
+
+        weatherEl.innerHTML = ''; // clear
+        for (let i=0; i<Math.min(7, days); i++){
+          const code = data.daily.weathercode[i];
+          const hi   = Math.round(data.daily.temperature_2m_max[i]);
+          const lo   = Math.round(data.daily.temperature_2m_min[i]);
+          const day  = dowLabel(data.daily.time[i]);
+
+          const tile = document.createElement('div');
+          tile.className = 'day';
+          tile.innerHTML = `
+            <div class="dow" title="${day}">${day}</div>
+            <div class="icon" title="${code}">${iconFor(code)}</div>
+            <div class="hi ${hiClass(hi)}">${hi}°</div>
+            <div class="lo">${lo}°</div>
+          `;
+          // Adjust rows: show DOW small at top, then icon, hi, lo (3 rows in CSS; DOW shares space with icon)
+          tile.style.gridTemplateRows = '0.5fr 1.1fr 0.8fr 0.6fr';
+          weatherEl.appendChild(tile);
+        }
+      }catch(e){
+        weatherEl.innerHTML = '<div style="grid-column:1/-1;display:flex;align-items:center;justify-content:center;font-size:1.2rem;opacity:.8;">Weather unavailable</div>';
+        console.error(e);
+      }
+    }
+
+    loadForecast();
+    setInterval(loadForecast, REFRESH_MS);
+
+    /* ===== Optional: refresh the sheet every 5 minutes ===== */
+    const SHEET_REFRESH_MS = 5 * 60 * 1000;
     if (SHEET_REFRESH_MS > 0) {
       const sheet = document.getElementById('sheet');
       setInterval(() => { sheet.src = sheet.src; }, SHEET_REFRESH_MS);
@@ -68,4 +137,3 @@
   </script>
 </body>
 </html>
-
