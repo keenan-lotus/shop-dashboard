@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Shop Dashboard — Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; background: #000; }
+    .wrap {
+      display: grid;
+      grid-template-rows: 80% 20%;
+      height: 100vh; width: 100vw;
+    }
+    /* TOP: spreadsheet */
+    #sheetBox { width:100%; height:100%; overflow:hidden; background:#000; }
+    #sheet { border:0; width:100%; height:100%; background:#000; }
+    /* BOTTOM: weather */
+    #weatherPane { width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+    .weatherWrap { width:100%; max-width:1600px; padding:0 8px; }
+    /* (Optional) hide scrollbars on Fire TV */
+    ::-webkit-scrollbar { width:0; height:0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- TOP 80%: Published Google Sheet -->
+    <div id="sheetBox">
+      <iframe
+        id="sheet"
+        src="https://docs.google.com/spreadsheets/d/e/2PACX-1vTjgGLB8JhGMcUzYI5H8VErNy-ZSEPu7CvPygo30HEPe4HnyjsAPxsKQZnOz_0e5AeDxXW5Ea8JAxFv/pubhtml?gid=0&single=true">
+      </iframe>
+    </div>
+
+    <!-- BOTTOM 20%: Nashville weather (WeatherWidget.io) -->
+    <div id="weatherPane">
+      <div class="weatherWrap">
+        <a class="weatherwidget-io"
+           href="https://forecast7.com/en/36d17n86d78/nashville/"
+           data-label_1="NASHVILLE"
+           data-label_2="WEATHER"
+           data-theme="dark"
+           data-basecolor="#000000"
+           data-textcolor="#ffffff"
+           data-highcolor="#ffffff"
+           data-lowcolor="#bdbdbd"
+           data-cloudcolor="#bdbdbd"
+           data-raincolor="#64b5f6">
+           NASHVILLE WEATHER
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- WeatherWidget.io loader -->
+  <script>
+    !function(d,s,id){
+      var js,fjs=d.getElementsByTagName(s)[0];
+      if(!d.getElementById(id)){
+        js=d.createElement(s); js.id=id; js.src='https://weatherwidget.io/js/widget.min.js';
+        fjs.parentNode.insertBefore(js,fjs);
+      }
+    }(document,'script','weatherwidget-io-js');
+  </script>
+
+  <!-- Optional: auto-refresh the sheet every 5 minutes -->
+  <script>
+    const SHEET_REFRESH_MS = 5 * 60 * 1000; // set to 0 to disable
+    if (SHEET_REFRESH_MS > 0) {
+      const sheet = document.getElementById('sheet');
+      setInterval(() => { sheet.src = sheet.src; }, SHEET_REFRESH_MS);
+    }
+  </script>
+</body>
+</html>
