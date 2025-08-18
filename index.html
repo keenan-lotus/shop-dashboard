@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Shop Dashboard — Test</title>
+  <title>Shop Dashboard — Test (Nashville 7-Day)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html, body { height: 100%; margin: 0; background: #000; }
@@ -16,14 +16,10 @@
     #sheet { border:0; width:100%; height:100%; background:#000; }
 
     /* BOTTOM: weather */
-    #weatherPane { width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
-    .weatherWrap { width:100%; max-width:1600px; padding:0 8px; }
-    /* ensure visible space even before widget loads */
-    .weatherWrap .weatherwidget-io { display:block; width:100%; min-height:160px; }
-    /* fallback area (hidden unless widget fails) */
-    #weatherFallback { display:none; width:100%; height:100%; }
-    #weatherFallback iframe { border:0; width:100%; height:100%; }
-    /* hide scrollbars (looks cleaner on TV) */
+    #weatherPane { width:100%; height:100%; background:#000; }
+    #weatherPane iframe { border:0; width:100%; height:100%; display:block; }
+
+    /* Hide scrollbars for a cleaner TV look */
     ::-webkit-scrollbar { width:0; height:0; }
   </style>
 </head>
@@ -37,54 +33,15 @@
       </iframe>
     </div>
 
-    <!-- BOTTOM 20%: Nashville weather (widget with radar fallback) -->
+    <!-- BOTTOM 20%: Nashville 7-day forecast (meteoblue) -->
     <div id="weatherPane">
-      <div class="weatherWrap">
-        <!-- WeatherWidget.io (forecast) -->
-        <a class="weatherwidget-io"
-           href="https://forecast7.com/en/36d17n86d78/nashville/"
-           data-label_1="NASHVILLE"
-           data-label_2="WEATHER"
-           data-theme="dark"
-           data-basecolor="#000000"
-           data-textcolor="#ffffff"
-           data-highcolor="#ffffff"
-           data-lowcolor="#bdbdbd"
-           data-cloudcolor="#bdbdbd"
-           data-raincolor="#64b5f6">
-           NASHVILLE WEATHER
-        </a>
-
-        <!-- Fallback: Windy radar embed (only shown if widget fails) -->
-        <div id="weatherFallback">
-          <iframe
-            src="https://embed.windy.com/embed2.html?lat=36.1627&lon=-86.7816&detailLat=36.1627&detailLon=-86.7816&zoom=7&level=surface&overlay=radar">
-          </iframe>
-        </div>
-      </div>
+      <iframe
+        id="weather"
+        src="https://www.meteoblue.com/en/weather/widget/daily/nashville_united-states_4644585?geoloc=disabled&days=7&tempunit=FAHRENHEIT&windunit=mph&layout=simple&cols=2&precipunit=inch&timezone=America%2FChicago"
+        title="Nashville 7-Day Forecast">
+      </iframe>
     </div>
   </div>
-
-  <!-- WeatherWidget.io loader -->
-  <script>
-    (function(d,s,id){
-      var js,fjs=d.getElementsByTagName(s)[0];
-      if(!d.getElementById(id)){
-        js=d.createElement(s); js.id=id; js.src='https://weatherwidget.io/js/widget.min.js';
-        fjs.parentNode.insertBefore(js,fjs);
-      }
-    }(document,'script','weatherwidget-io-js'));
-
-    // Fallback: if widget hasn't injected content within 5s, show radar
-    setTimeout(function(){
-      var anchor = document.querySelector('.weatherwidget-io');
-      var rendered = anchor && anchor.querySelector('iframe');
-      if (!rendered) {
-        document.getElementById('weatherFallback').style.display = 'block';
-        if (anchor) anchor.style.display = 'none';
-      }
-    }, 5000);
-  </script>
 
   <!-- Optional: auto-refresh the sheet every 5 minutes -->
   <script>
@@ -96,4 +53,3 @@
   </script>
 </body>
 </html>
-
