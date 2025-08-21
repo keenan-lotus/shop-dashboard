@@ -1,27 +1,84 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Shop Dashboard — Nashville</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shop Dashboard — Cabinet Jobs + Weather</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <style>
     :root{
-      /* Adjust the split here if you want more/less weather space */
-      --top-percent: 75vh;   /* top area height (sheet) */
-      --bottom-percent: calc(100vh - var(--top-percent)); /* weather auto-fills rest */
+      /* Layout */
+      --top-split: 80vh;       /* table area height */
+      --bottom-split: 20vh;    /* weather area height */
+      /* Table sizing (tight for TV density) */
+      --row-h: 30px;           /* data row height */
+      --head-h: 34px;          /* header height */
+      --font: 13px;            /* base font size */
+      /* Column widths (pixels) — fits 1920px safely */
+      --w-status: 90px;
+      --w-requester: 120px;
+      --w-dateentered: 100px;
+      --w-deadline: 100px;
+      --w-jobsite: 140px;
+      --w-partname: 200px;
+      --w-quantity: 70px;
+      --w-material: 120px;
+      --w-dimensions: 140px;
+      --w-shopfield: 110px;
+      --w-notes: 420px;
+      --w-location: 110px;
     }
+
     html, body { height: 100%; margin: 0; background:#000; color:#fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-    .wrap { height: 100vh; width: 100vw; display: grid; grid-template-rows: var(--top-percent) var(--bottom-percent); }
+    * { box-sizing: border-box; }
+    .wrap { display: grid; grid-template-rows: var(--top-split) var(--bottom-split); height: 100vh; width: 100vw; }
 
-    /* TOP: Google Sheet */
-    #sheetBox { background:#000; overflow:hidden; }
-    #sheet { border:0; width:100%; height:100%; background:#000; }
+    /* ===== TABLE ===== */
+    #tablePane { overflow: hidden; padding: 6px 10px 0 10px; }
+    .table {
+      width: 100%;
+      display: grid;
+      grid-template-columns:
+        var(--w-status) var(--w-requester) var(--w-dateentered) var(--w-deadline)
+        var(--w-jobsite) var(--w-partname) var(--w-quantity) var(--w-material)
+        var(--w-dimensions) var(--w-shopfield) var(--w-notes) var(--w-location);
+      gap: 0;
+      border: 1px solid #202020;
+      border-bottom: none;
+      background:#0b0b0b;
+      font-size: var(--font);
+      line-height: 1;
+    }
+    .th, .td {
+      border-bottom: 1px solid #202020;
+      border-right: 1px solid #202020;
+      padding: 6px 8px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: flex; align-items: center;
+      height: var(--row-h);
+    }
+    .th { height: var(--head-h); font-weight: 700; background:#141414; position: sticky; top: 0; z-index: 2; }
+    .td:last-child, .th:last-child { border-right: none; }
 
-    /* BOTTOM: Custom 7-day forecast */
-    #weather { background:#0b0b0b; height:100%; width:100%; display:grid; grid-template-columns: repeat(7, 1fr); gap:0; }
+    .row:nth-child(even) .td { background:#0f0f0f; }
+    .row:nth-child(odd)  .td { background:#0b0b0b; }
+
+    .pill { padding: 3px 8px; border-radius: 999px; font-weight: 600; }
+    .pill.inprogress { background:#3a2a00; color:#ffb84d; }
+    .pill.completed  { background:#123016; color:#7dffa1; }
+
+    .align-right { justify-content: flex-end; }
+    .muted { opacity: 0.85; }
+
+    .deadline-soon { color:#ffb84d; }   /* within 2 days */
+    .deadline-over { color:#ff6666; }   /* overdue */
+
+    #metaBar { display:flex; justify-content:space-between; align-items:center; height: 20px; padding: 0 8px; font-size: 12px; color:#bdbdbd; }
+
+    /* ===== WEATHER ===== */
+    #weather { background:#0b0b0b; display:grid; grid-template-columns: repeat(7, 1fr); gap:0; }
     .day {
-      display:grid; grid-template-rows: 1.2fr 0.8fr 0.6fr; /* icon / hi / lo */
-      align-items:center; justify-items:center; height:100%;
+      display:grid; grid-template-rows: 0.5fr 1.1fr 0.8fr 0.6fr;
+      align-items:center; justify-items:center;
       border-left: 1px solid rgba(255,255,255,0.08);
     }
     .day:first-child { border-left:none; }
@@ -29,112 +86,224 @@
     .icon { font-size: 1.8rem; line-height: 1; }
     .hi   { font-size: 1.2rem; font-weight: 700; }
     .lo   { font-size: 0.95rem; opacity: 0.9; margin-bottom: 4px; }
+    .hi.hot  { color:#ff6b6b; }   /* 90+ */
+    .hi.warm { color:#ffa94d; }   /* 80-89 */
+    .hi.cool { color:#4dabf7; }   /* <80 */
 
-    /* color the high temp bar subtly; redder when hotter */
-    .hi.hot    { color:#ff6b6b; }   /* 90+ */
-    .hi.warm   { color:#ffa94d; }   /* 80-89 */
-    .hi.cool   { color:#4dabf7; }   /* below 80 */
-
-    /* Hide page scrollbars for a cleaner TV look */
+    /* Hide scrollbars */
     ::-webkit-scrollbar { width:0; height:0; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <!-- TOP: Published Google Sheet -->
-    <div id="sheetBox">
-      <iframe
-        id="sheet"
-        src="https://docs.google.com/spreadsheets/d/e/2PACX-1vSBrgvQHdcw5mVUfRSSewO0BQ3pNcbL2WAAb5WshzX1LVv0Ht2TVnMSyp5WME5oiTvBrsrVN2wtrfE8/pubhtml?gid=0&single=true">
-      </iframe>
+    <!-- TOP: Jobs table -->
+    <div id="tablePane">
+      <div id="table" class="table" role="table" aria-label="Cabinet Jobs"></div>
+      <div id="metaBar"><span id="lastUpdated"></span><span id="pageInfo"></span></div>
     </div>
 
-    <!-- BOTTOM: Native 7-day forecast (Open-Meteo) -->
+    <!-- BOTTOM: Weather -->
     <div id="weather" aria-label="7-day weather for Nashville, TN"></div>
   </div>
 
   <script>
-    /* ===== Nashville Forecast via Open-Meteo (no API key) ===== */
-    const LAT = 36.1627, LON = -86.7816, TZ = 'America/Chicago';
-    const UNITS = 'fahrenheit'; // 'fahrenheit' or 'celsius'
-    const WIND  = 'mph';        // mph, kmh, ms, kn
-    const REFRESH_MS = 30 * 60 * 1000; // re-fetch every 30 min
+    /*************** CONFIG: paste YOUR published CSV link for "Cabinet Jobs" below ***************/
+    const CSV_URL =
+      "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjgGLB8JhGMcUzYI5H8VErNy-ZSEPu7CvPygo30HEPe4HnyjsAPxsKQZnOz_0e5AeDxXW5Ea8JAxFv/pub?gid=0&single=true&output=csv";
 
-    const weatherEl = document.getElementById('weather');
+    const REFRESH_MS = 5 * 60 * 1000;      // re-fetch sheet every 5 min
+    const PAGE_DWELL_MS = 12000;           // dwell per page (ms)
+    const TIMEZONE = "America/Chicago";
 
-    const WMO_MAP = [
-      {codes:[0], i:'☀️', t:'Clear'},
-      {codes:[1,2], i:'🌤️', t:'Partly cloudy'},
-      {codes:[3], i:'☁️', t:'Overcast'},
-      {codes:[45,48], i:'🌫️', t:'Fog'},
-      {codes:[51,53,55], i:'🌦️', t:'Drizzle'},
-      {codes:[56,57], i:'🌧️', t:'Freezing drizzle'},
-      {codes:[61,63,65], i:'🌧️', t:'Rain'},
-      {codes:[66,67], i:'🌧️', t:'Freezing rain'},
-      {codes:[71,73,75,77], i:'❄️', t:'Snow'},
-      {codes:[80,81,82], i:'🌦️', t:'Showers'},
-      {codes:[85,86], i:'❄️', t:'Snow showers'},
-      {codes:[95], i:'⛈️', t:'Thunderstorm'},
-      {codes:[96,99], i:'⛈️', t:'Thunderstorm w/ hail'},
+    // column keys (normalized to header text)
+    const COLS = [
+      { key:'status',      label:'Status',       w:'var(--w-status)'     , class:'status' },
+      { key:'requester',   label:'Requester',    w:'var(--w-requester)'  },
+      { key:'dateentered', label:'Date Entered', w:'var(--w-dateentered)'},
+      { key:'deadline',    label:'Deadline',     w:'var(--w-deadline)'   , class:'deadline' },
+      { key:'jobsite',     label:'Job Site',     w:'var(--w-jobsite)'    },
+      { key:'partname',    label:'Part Name',    w:'var(--w-partname)'   },
+      { key:'quantity',    label:'Quantity',     w:'var(--w-quantity)'   , class:'align-right' },
+      { key:'material',    label:'Material',     w:'var(--w-material)'   },
+      { key:'dimensions',  label:'Dimensions',   w:'var(--w-dimensions)' },
+      { key:'shopfield',   label:'Shop/Field',   w:'var(--w-shopfield)'  },
+      { key:'notes',       label:'Notes',        w:'var(--w-notes)'      },
+      { key:'location',    label:'Location',     w:'var(--w-location)'   },
     ];
-    function iconFor(code){
-      for (const g of WMO_MAP) if (g.codes.includes(code)) return g.i;
-      return '❓';
-    }
-    function hiClass(tempF){
-      if (tempF >= 90) return 'hot';
-      if (tempF >= 80) return 'warm';
-      return 'cool';
-    }
-    function dowLabel(dateStr){
-      const d = new Date(dateStr + 'T12:00:00'); // avoid TZ midnight issues
-      return d.toLocaleDateString('en-US', { weekday: 'short', timeZone: TZ });
-    }
 
-    async function loadForecast(){
-      try{
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`
-          + `&daily=weathercode,temperature_2m_max,temperature_2m_min`
-          + `&temperature_unit=${UNITS}&windspeed_unit=${WIND}&timezone=${encodeURIComponent(TZ)}`;
-        const res = await fetch(url);
-        const data = await res.json();
-        const days = data.daily.time.length;
+    // ===== CSV fetch & render =====
+    let rowsAll = [];
+    let page = 0, rowsPerPage = 1;
 
-        weatherEl.innerHTML = ''; // clear
-        for (let i=0; i<Math.min(7, days); i++){
-          const code = data.daily.weathercode[i];
-          const hi   = Math.round(data.daily.temperature_2m_max[i]);
-          const lo   = Math.round(data.daily.temperature_2m_min[i]);
-          const day  = dowLabel(data.daily.time[i]);
+    function norm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
 
-          const tile = document.createElement('div');
-          tile.className = 'day';
-          tile.innerHTML = `
-            <div class="dow" title="${day}">${day}</div>
-            <div class="icon" title="${code}">${iconFor(code)}</div>
-            <div class="hi ${hiClass(hi)}">${hi}°</div>
-            <div class="lo">${lo}°</div>
-          `;
-          // Adjust rows: show DOW small at top, then icon, hi, lo (3 rows in CSS; DOW shares space with icon)
-          tile.style.gridTemplateRows = '0.5fr 1.1fr 0.8fr 0.6fr';
-          weatherEl.appendChild(tile);
+    function parseCSV(text){
+      const out = []; let row = []; let i = 0; let cur = ''; let inQ = false;
+      while (i < text.length){
+        const ch = text[i++];
+        if (inQ){
+          if (ch === '"'){
+            if (text[i] === '"'){ cur += '"'; i++; } else { inQ = false; }
+          } else cur += ch;
+        } else {
+          if (ch === '"'){ inQ = true; }
+          else if (ch === ','){ row.push(cur); cur=''; }
+          else if (ch === '\n'){ row.push(cur); out.push(row); row=[]; cur=''; }
+          else if (ch === '\r'){ /* ignore */ }
+          else cur += ch;
         }
+      }
+      if (cur.length || row.length) { row.push(cur); out.push(row); }
+      return out;
+    }
+
+    async function loadCSV(){
+      try{
+        const res = await fetch(CSV_URL, {cache:'no-cache'});
+        const text = await res.text();
+        const grid = parseCSV(text);
+        if (!grid.length) return;
+
+        const head = grid[0].map(h => norm(h));
+        const mapIdx = COLS.map(c => head.indexOf(c.key));
+
+        const data = [];
+        for (let r=1; r<grid.length; r++){
+          const raw = grid[r];
+          const obj = {};
+          let empty = true;
+          for (let c=0; c<COLS.length; c++){
+            const idx = mapIdx[c];
+            const val = idx >= 0 ? raw[idx] : '';
+            if (val !== '' && val != null) empty = false;
+            obj[COLS[c].key] = val;
+          }
+          if (!empty) data.push(obj);
+        }
+
+        rowsAll = data;
+        computeRowsPerPage();
+        page = 0;
+        renderPage();
+        document.getElementById('lastUpdated').textContent =
+          'Last updated: ' + new Date().toLocaleString('en-US', { timeZone: TIMEZONE });
       }catch(e){
-        weatherEl.innerHTML = '<div style="grid-column:1/-1;display:flex;align-items:center;justify-content:center;font-size:1.2rem;opacity:.8;">Weather unavailable</div>';
         console.error(e);
       }
     }
 
-    loadForecast();
-    setInterval(loadForecast, REFRESH_MS);
-
-    /* ===== Optional: refresh the sheet every 5 minutes ===== */
-    const SHEET_REFRESH_MS = 5 * 60 * 1000;
-    if (SHEET_REFRESH_MS > 0) {
-      const sheet = document.getElementById('sheet');
-      setInterval(() => { sheet.src = sheet.src; }, SHEET_REFRESH_MS);
+    function computeRowsPerPage(){
+      const pane = document.getElementById('tablePane');
+      const cs = getComputedStyle(document.documentElement);
+      const headerH = parseInt(cs.getPropertyValue('--head-h')) || 34;
+      const rowH    = parseInt(cs.getPropertyValue('--row-h'))  || 30;
+      const metaH   = 20; // meta bar
+      const paneH   = Math.max(120, pane.getBoundingClientRect().height);
+      rowsPerPage = Math.max(1, Math.floor((paneH - headerH - metaH) / rowH));
     }
+
+    function deadlineClass(deadlineStr){
+      if (!deadlineStr) return '';
+      const d = new Date(deadlineStr);
+      if (isNaN(d)) return '';
+      const today = new Date(); today.setHours(0,0,0,0);
+      const ddl = new Date(d);  ddl.setHours(0,0,0,0);
+      const diffDays = Math.round((ddl - today) / 86400000);
+      if (diffDays < 0) return 'deadline-over';
+      if (diffDays <= 2) return 'deadline-soon';
+      return '';
+    }
+
+    function statusPill(s){
+      const val = norm(s);
+      if (val === 'completed') return '<span class="pill completed">Completed</span>';
+      if (val === 'inprogress') return '<span class="pill inprogress">In&nbsp;Progress</span>';
+      return `<span class="muted">${s||''}</span>`;
+    }
+
+    function renderPage(){
+      const table = document.getElementById('table');
+      table.innerHTML = '';
+      table.style.gridTemplateColumns = COLS.map(c => c.w).join(' ');
+
+      // header
+      for (const c of COLS){
+        const el = document.createElement('div');
+        el.className = 'th';
+        el.textContent = c.label;
+        table.appendChild(el);
+      }
+
+      const start = page * rowsPerPage;
+      const end = Math.min(start + rowsPerPage, rowsAll.length);
+      for (let r=start; r<end; r++){
+        const row = rowsAll[r];
+        for (const c of COLS){
+          const el = document.createElement('div');
+          const cl = ['td']; if (c.class) cl.push(c.class);
+          if (c.key === 'status') { el.innerHTML = statusPill(row[c.key]); }
+          else if (c.key === 'deadline') { el.textContent = row[c.key]; el.classList.add(deadlineClass(row[c.key])); }
+          else { el.textContent = row[c.key]; }
+          el.className = cl.join(' ');
+          table.appendChild(el);
+        }
+      }
+
+      const pInfo = document.getElementById('pageInfo');
+      const totalPages = Math.max(1, Math.ceil(rowsAll.length / rowsPerPage));
+      pInfo.textContent = `Rows ${start+1}–${end} of ${rowsAll.length}  •  Page ${page+1}/${totalPages}`;
+    }
+
+    window.addEventListener('resize', () => { computeRowsPerPage(); page = 0; renderPage(); });
+
+    // paging loop
+    setInterval(() => {
+      if (!rowsAll.length) return;
+      const total = Math.max(1, Math.ceil(rowsAll.length / rowsPerPage));
+      page = (page + 1) % total;
+      renderPage();
+    }, PAGE_DWELL_MS);
+
+    // refresh data periodically
+    setInterval(loadCSV, REFRESH_MS);
+
+    // initial load
+    loadCSV();
+
+    /*************** WEATHER (Open-Meteo 7-Day) ***************/
+    const LAT = 36.1627, LON = -86.7816, TZ = 'America/Chicago';
+    const UNITS = 'fahrenheit'; const WIND  = 'mph';
+    const WMO = [
+      {codes:[0], i:'☀️'},{codes:[1,2], i:'🌤️'},{codes:[3], i:'☁️'},
+      {codes:[45,48], i:'🌫️'},{codes:[51,53,55], i:'🌦️'},{codes:[56,57], i:'🌧️'},
+      {codes:[61,63,65], i:'🌧️'},{codes:[66,67], i:'🌧️'},{codes:[71,73,75,77], i:'❄️'},
+      {codes:[80,81,82], i:'🌦️'},{codes:[85,86], i:'❄️'},{codes:[95], i:'⛈️'},{codes:[96,99], i:'⛈️'}
+    ];
+    function ico(code){ for (const g of WMO) if (g.codes.includes(code)) return g.i; return '❓'; }
+    function hiCls(f){ return f>=90 ? 'hot' : f>=80 ? 'warm' : 'cool'; }
+    function dow(d){ return new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short', timeZone:TZ}); }
+
+    async function loadWx(){
+      try{
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`
+          + `&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=${UNITS}`
+          + `&windspeed_unit=${WIND}&timezone=${encodeURIComponent(TZ)}`;
+        const res = await fetch(url); const data = await res.json();
+        const W = document.getElementById('weather'); W.innerHTML='';
+        for (let i=0; i<7; i++){
+          const d = document.createElement('div'); d.className='day';
+          const hi = Math.round(data.daily.temperature_2m_max[i]);
+          const lo = Math.round(data.daily.temperature_2m_min[i]);
+          d.innerHTML = `
+            <div class="dow">${dow(data.daily.time[i])}</div>
+            <div class="icon">${ico(data.daily.weathercode[i])}</div>
+            <div class="hi ${hiCls(hi)}">${hi}°</div>
+            <div class="lo">${lo}°</div>`;
+          W.appendChild(d);
+        }
+      }catch(e){ console.error(e); }
+    }
+    loadWx(); setInterval(loadWx, 30*60*1000);
   </script>
 </body>
 </html>
-
