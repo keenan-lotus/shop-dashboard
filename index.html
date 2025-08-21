@@ -13,6 +13,19 @@
       --row-h: 30px;           /* data row height */
       --head-h: 34px;          /* header height */
       --font: 13px;            /* base font size */
+      /* Column widths (pixels) — fits 1920px safely */
+      --w-status: 90px;
+      --w-requester: 120px;
+      --w-dateentered: 100px;
+      --w-deadline: 100px;
+      --w-jobsite: 140px;
+      --w-partname: 200px;
+      --w-quantity: 70px;
+      --w-material: 120px;
+      --w-dimensions: 140px;
+      --w-shopfield: 110px;
+      --w-notes: 420px;
+      --w-location: 110px;
     }
 
     html, body { height: 100%; margin: 0; background:#000; color:#fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
@@ -24,7 +37,10 @@
     .table {
       width: 100%;
       display: grid;
-      /* gridTemplateColumns is set dynamically in JS to fit viewport */
+      grid-template-columns:
+        var(--w-status) var(--w-requester) var(--w-dateentered) var(--w-deadline)
+        var(--w-jobsite) var(--w-partname) var(--w-quantity) var(--w-material)
+        var(--w-dimensions) var(--w-shopfield) var(--w-notes) var(--w-location);
       gap: 0;
       border: 1px solid #202020;
       border-bottom: none;
@@ -99,22 +115,21 @@
     const PAGE_DWELL_MS = 12000;           // dwell per page (ms)
     const TIMEZONE = "America/Chicago";
 
-    // Define columns with BASE pixel widths; JS scales them to fit viewport width.
+    // column keys (normalized to header text)
     const COLS = [
-      { key:'status',      label:'Status',       w:  90, class:'status' },
-      { key:'requester',   label:'Requester',    w: 120 },
-      { key:'dateentered', label:'Date Entered', w: 100 },
-      { key:'deadline',    label:'Deadline',     w: 100, class:'deadline' },
-      { key:'jobsite',     label:'Job Site',     w: 140 },
-      { key:'partname',    label:'Part Name',    w: 200 },
-      { key:'quantity',    label:'Quantity',     w:  70, class:'align-right' },
-      { key:'material',    label:'Material',     w: 120 },
-      { key:'dimensions',  label:'Dimensions',   w: 140 },
-      { key:'shopfield',   label:'Shop/Field',   w: 110 },
-      { key:'notes',       label:'Notes',        w: 420 },
-      { key:'location',    label:'Location',     w: 110 },
+      { key:'status',      label:'Status',       w:'var(--w-status)'     , class:'status' },
+      { key:'requester',   label:'Requester',    w:'var(--w-requester)'  },
+      { key:'dateentered', label:'Date Entered', w:'var(--w-dateentered)'},
+      { key:'deadline',    label:'Deadline',     w:'var(--w-deadline)'   , class:'deadline' },
+      { key:'jobsite',     label:'Job Site',     w:'var(--w-jobsite)'    },
+      { key:'partname',    label:'Part Name',    w:'var(--w-partname)'   },
+      { key:'quantity',    label:'Quantity',     w:'var(--w-quantity)'   , class:'align-right' },
+      { key:'material',    label:'Material',     w:'var(--w-material)'   },
+      { key:'dimensions',  label:'Dimensions',   w:'var(--w-dimensions)' },
+      { key:'shopfield',   label:'Shop/Field',   w:'var(--w-shopfield)'  },
+      { key:'notes',       label:'Notes',        w:'var(--w-notes)'      },
+      { key:'location',    label:'Location',     w:'var(--w-location)'   },
     ];
-    const TOTAL_BASE_W = COLS.reduce((s,c)=>s+c.w,0); // ~1720px
 
     // ===== CSV fetch & render =====
     let rowsAll = [];
@@ -187,17 +202,6 @@
       rowsPerPage = Math.max(1, Math.floor((paneH - headerH - metaH) / rowH));
     }
 
-    // Compute scaled column widths to exactly fit the available width.
-    function applyGridWidths(table){
-      const paneW = Math.floor(document.getElementById('tablePane').clientWidth) - 2; // borders
-      const scale = Math.min(1, paneW / TOTAL_BASE_W);
-      const cols = COLS.map(c => Math.floor(c.w * scale) + 'px').join(' ');
-      table.style.gridTemplateColumns = cols;
-
-      // If scale is quite small, gently reduce font a notch for readability.
-      document.documentElement.style.setProperty('--font', (scale < 0.9 ? 12 : 13) + 'px');
-    }
-
     function deadlineClass(deadlineStr){
       if (!deadlineStr) return '';
       const d = new Date(deadlineStr);
@@ -220,7 +224,7 @@
     function renderPage(){
       const table = document.getElementById('table');
       table.innerHTML = '';
-      applyGridWidths(table);
+      table.style.gridTemplateColumns = COLS.map(c => c.w).join(' ');
 
       // header
       for (const c of COLS){
