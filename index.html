@@ -7,15 +7,19 @@
   <style>
     :root{
       /* Adjust the split here if you want more/less weather space */
-      --top-percent: 75vh;   /* top area height (sheet) */
+      --top-percent: 75vh;   /* top area height (sheet/slides) */
       --bottom-percent: calc(100vh - var(--top-percent)); /* weather auto-fills rest */
     }
     html, body { height: 100%; margin: 0; background:#000; color:#fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
     .wrap { height: 100vh; width: 100vw; display: grid; grid-template-rows: var(--top-percent) var(--bottom-percent); }
 
-    /* TOP: Google Sheet */
-    #sheetBox { background:#000; overflow:hidden; }
-    #sheet { border:0; width:100%; height:100%; background:#000; }
+    /* TOP container holds two panes, we toggle them */
+    #sheetBox { position: relative; background:#000; overflow:hidden; }
+    .pane { position:absolute; inset:0; }
+    .hidden { display:none; }
+
+    /* Iframes */
+    iframe { border:0; width:100%; height:100%; background:#000; }
 
     /* BOTTOM: Custom 7-day forecast */
     #weather { background:#0b0b0b; height:100%; width:100%; display:grid; grid-template-columns: repeat(7, 1fr); gap:0; }
@@ -41,12 +45,21 @@
 </head>
 <body>
   <div class="wrap">
-    <!-- TOP: Published Google Sheet -->
+    <!-- TOP: Sheet pane + Slides pane (we rotate them) -->
     <div id="sheetBox">
-      <iframe
-        id="sheet"
-        src="https://docs.google.com/spreadsheets/d/e/2PACX-1vSBrgvQHdcw5mVUfRSSewO0BQ3pNcbL2WAAb5WshzX1LVv0Ht2TVnMSyp5WME5oiTvBrsrVN2wtrfE8/pubhtml?gid=0&single=true">
-      </iframe>
+      <!-- Sheet pane (your existing embed) -->
+      <div id="paneSheet" class="pane">
+        <iframe
+          id="sheet"
+          src="https://docs.google.com/spreadsheets/d/e/2PACX-1vSBrgvQHdcw5mVUfRSSewO0BQ3pNcbL2WAAb5WshzX1LVv0Ht2TVnMSyp5WME5oiTvBrsrVN2wtrfE8/pubhtml?gid=0&single=true">
+        </iframe>
+      </div>
+
+      <!-- Slides pane (hidden by default) -->
+      <div id="paneSlides" class="pane hidden">
+        <!-- Use your Google Slides "Publish to the web → Link" here -->
+        <iframe id="slides" allow="autoplay"></iframe>
+      </div>
     </div>
 
     <!-- BOTTOM: Native 7-day forecast (Open-Meteo) -->
@@ -54,7 +67,51 @@
   </div>
 
   <script>
-    /* ===== Nashville Forecast via Open-Meteo (no API key) ===== */
+    /******** CONFIG ********/
+    // 1) Google Slides (Publish to web → Link). Example ends like:
+    //    .../pub?start=true&loop=true&delayms=10000
+    const SLIDES_URL = "https://docs.google.com/presentation/d/e/2PACX-1vT-muvXcDisu2bLfnI0QWZAkxD-F5Lrt2KmlAIh2J6j7mlsq0rsmy8DF1F9lyogH_x_HLvThveNmRKg/pub?start=true&loop=true&delayms=5000";
+
+    // 2) Rotation timing
+    const ROTATE_MS = 45 * 1000;        // show Sheet 45s, Slides 45s, repeat
+
+    // 3) Optional: refresh the Sheet iframe every 5 minutes to keep it fresh
+    const SHEET_REFRESH_MS = 5 * 60 * 1000;
+
+    /******** SHEET/SLIDES ROTATION ********/
+    const paneSheet  = document.getElementById('paneSheet');
+    const paneSlides = document.getElementById('paneSlides');
+    const sheetIF    = document.getElementById('sheet');
+    const slidesIF   = document.getElementById('slides');
+
+    function showSheet(){
+      // Stop slides to save CPU on Fire TV
+      slidesIF.src = 'about:blank';
+      paneSlides.classList.add('hidden');
+      paneSheet.classList.remove('hidden');
+    }
+    function showSlides(){
+      paneSheet.classList.add('hidden');
+      paneSlides.classList.remove('hidden');
+      // Force reload with cache-busting param so autoplay/loop kicks in on Silk
+      const ts = Date.now();
+      const sep = SLIDES_URL.includes('?') ? '&' : '?';
+      slidesIF.src = SLIDES_URL + sep + 'ts=' + ts;
+    }
+
+    // Start on the Sheet (current behavior), then toggle every ROTATE_MS
+    showSheet();
+    setInterval(() => {
+      if (paneSlides.classList.contains('hidden')) showSlides();
+      else showSheet();
+    }, ROTATE_MS);
+
+    // Keep the sheet refreshed in the background (optional)
+    if (SHEET_REFRESH_MS > 0) {
+      setInterval(() => { sheetIF.src = sheetIF.src; }, SHEET_REFRESH_MS);
+    }
+
+    /******** WEATHER: Nashville via Open-Meteo (no API key) ********/
     const LAT = 36.1627, LON = -86.7816, TZ = 'America/Chicago';
     const UNITS = 'fahrenheit'; // 'fahrenheit' or 'celsius'
     const WIND  = 'mph';        // mph, kmh, ms, kn
@@ -115,7 +172,7 @@
             <div class="hi ${hiClass(hi)}">${hi}°</div>
             <div class="lo">${lo}°</div>
           `;
-          // Adjust rows: show DOW small at top, then icon, hi, lo (3 rows in CSS; DOW shares space with icon)
+          // Use 4 rows: tiny DOW at top, then icon, hi, lo
           tile.style.gridTemplateRows = '0.5fr 1.1fr 0.8fr 0.6fr';
           weatherEl.appendChild(tile);
         }
@@ -127,14 +184,6 @@
 
     loadForecast();
     setInterval(loadForecast, REFRESH_MS);
-
-    /* ===== Optional: refresh the sheet every 5 minutes ===== */
-    const SHEET_REFRESH_MS = 5 * 60 * 1000;
-    if (SHEET_REFRESH_MS > 0) {
-      const sheet = document.getElementById('sheet');
-      setInterval(() => { sheet.src = sheet.src; }, SHEET_REFRESH_MS);
-    }
   </script>
 </body>
 </html>
-
