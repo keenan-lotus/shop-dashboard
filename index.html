@@ -6,16 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
-      /* Adjust the split here if you want more/less weather space */
-      --top-percent: 75vh;   /* top area height (sheet/slides) */
-      --bottom-percent: calc(100vh - var(--top-percent)); /* weather auto-fills rest */
+      --top-percent: 75vh;   /* top area height (sheet/slides/video) */
+      --bottom-percent: calc(100vh - var(--top-percent));
     }
     html, body { height: 100%; margin: 0; background:#000; color:#fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
     .wrap { height: 100vh; width: 100vw; display: grid; grid-template-rows: var(--top-percent) var(--bottom-percent); }
 
-    /* TOP container holds two panes, we toggle them */
-    #sheetBox { position: relative; background:#000; overflow:hidden; }
-    .pane { position:absolute; inset:0; }
+    /* TOP container holds three panes, we toggle them */
+    #topBox { position: relative; background:#000; overflow:hidden; }
+    .pane   { position:absolute; inset:0; }
     .hidden { display:none; }
 
     /* Iframes */
@@ -24,7 +23,7 @@
     /* BOTTOM: Custom 7-day forecast */
     #weather { background:#0b0b0b; height:100%; width:100%; display:grid; grid-template-columns: repeat(7, 1fr); gap:0; }
     .day {
-      display:grid; grid-template-rows: 1.2fr 0.8fr 0.6fr; /* icon / hi / lo */
+      display:grid; grid-template-rows: 0.5fr 1.1fr 0.8fr 0.6fr; /* DOW / icon / hi / lo */
       align-items:center; justify-items:center; height:100%;
       border-left: 1px solid rgba(255,255,255,0.08);
     }
@@ -33,32 +32,45 @@
     .icon { font-size: 1.8rem; line-height: 1; }
     .hi   { font-size: 1.2rem; font-weight: 700; }
     .lo   { font-size: 0.95rem; opacity: 0.9; margin-bottom: 4px; }
+    .hi.hot  { color:#ff6b6b; }   /* 90+ */
+    .hi.warm { color:#ffa94d; }   /* 80-89 */
+    .hi.cool { color:#4dabf7; }   /* below 80 */
 
-    /* color the high temp bar subtly; redder when hotter */
-    .hi.hot    { color:#ff6b6b; }   /* 90+ */
-    .hi.warm   { color:#ffa94d; }   /* 80-89 */
-    .hi.cool   { color:#4dabf7; }   /* below 80 */
-
-    /* Hide page scrollbars for a cleaner TV look */
     ::-webkit-scrollbar { width:0; height:0; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <!-- TOP: Sheet pane + Slides pane (we rotate them) -->
-    <div id="sheetBox">
-      <!-- Sheet pane (your existing embed) -->
+    <!-- TOP: Sheet + Slides + Video (we rotate these) -->
+    <div id="topBox">
+      <!-- SHEET -->
       <div id="paneSheet" class="pane">
         <iframe
           id="sheet"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
           src="https://docs.google.com/spreadsheets/d/e/2PACX-1vSBrgvQHdcw5mVUfRSSewO0BQ3pNcbL2WAAb5WshzX1LVv0Ht2TVnMSyp5WME5oiTvBrsrVN2wtrfE8/pubhtml?gid=0&single=true">
         </iframe>
       </div>
 
-      <!-- Slides pane (hidden by default) -->
+      <!-- SLIDES (Publish to web → Link; autoplay/loop; rm=minimal) -->
       <div id="paneSlides" class="pane hidden">
-        <!-- Use your Google Slides "Publish to the web → Link" here -->
-        <iframe id="slides" allow="autoplay"></iframe>
+        <iframe
+          id="slides"
+          allow="autoplay"
+          sandbox="allow-scripts allow-same-origin allow-presentation"
+          src="https://docs.google.com/presentation/d/e/2PACX-1vT-muvXcDisu2bLfnI0QWZAkxD-F5Lrt2KmlAIh2J6j7mlsq0rsmy8DF1F9lyogH_x_HLvThveNmRKg/pub?start=true&loop=true&delayms=7000&rm=minimal">
+        </iframe>
+      </div>
+
+      <!-- VIDEO (YouTube, controlled via IFrame API) -->
+      <div id="paneVideo" class="pane hidden">
+        <iframe
+          id="yt"
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+          sandbox="allow-scripts allow-same-origin allow-presentation"
+          referrerpolicy="no-referrer-when-downgrade"
+          src="">
+        </iframe>
       </div>
     </div>
 
@@ -66,59 +78,106 @@
     <div id="weather" aria-label="7-day weather for Nashville, TN"></div>
   </div>
 
+  <!-- YouTube IFrame API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+
   <script>
     /******** CONFIG ********/
-    // 1) Google Slides (Publish to web → Link). Example ends like:
-    //    .../pub?start=true&loop=true&delayms=10000
-    const SLIDES_URL = "https://docs.google.com/presentation/d/e/2PACX-1vT-muvXcDisu2bLfnI0QWZAkxD-F5Lrt2KmlAIh2J6j7mlsq0rsmy8DF1F9lyogH_x_HLvThveNmRKg/pubembed?start=false&loop=false&delayms=5000&rm=minimal";
+    // Slides already set in the iframe above.
+    // YouTube video (use your DADU project):
+    const YT_VIDEO_ID = "jGJiMJ_T8Ow";
+    // Rotation order & durations
+    const DUR = { sheet: 45_000, slides: 45_000, videoMax: 55_000 }; // fallback cap for video
+    const ORDER = ["sheet","slides","sheet","video"]; // repeat
 
-    // 2) Rotation timing
-    const ROTATE_MS = 45 * 1000;        // show Sheet 45s, Slides 45s, repeat
-
-    // 3) Optional: refresh the Sheet iframe every 5 minutes to keep it fresh
+    // Optional: refresh the Sheet iframe every 5 minutes
     const SHEET_REFRESH_MS = 5 * 60 * 1000;
 
-    /******** SHEET/SLIDES ROTATION ********/
+    /******** ELEMENTS ********/
     const paneSheet  = document.getElementById('paneSheet');
     const paneSlides = document.getElementById('paneSlides');
+    const paneVideo  = document.getElementById('paneVideo');
     const sheetIF    = document.getElementById('sheet');
     const slidesIF   = document.getElementById('slides');
+    const ytIF       = document.getElementById('yt');
 
-    function showSheet(){
-      // Stop slides to save CPU on Fire TV
-      slidesIF.src = 'about:blank';
-      paneSlides.classList.add('hidden');
-      paneSheet.classList.remove('hidden');
+    // Build a safe nocookie URL with your current origin for JS API control
+    const ORIGIN = encodeURIComponent(location.origin);
+    const YT_URL = `https://www.youtube-nocookie.com/embed/${YT_VIDEO_ID}?enablejsapi=1&autoplay=0&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&fs=0&origin=${ORIGIN}`;
+    ytIF.src = YT_URL;
+
+    /******** YOUTUBE CONTROL ********/
+    let ytPlayer = null, ytReady = false, cycleTimer = null, stepIndex = 0, videoCapTimer = null;
+
+    window.onYouTubeIframeAPIReady = function(){
+      ytPlayer = new YT.Player('yt', {
+        events: {
+          onReady: () => { ytReady = true; },
+          onStateChange: (e) => {
+            // If video ended, advance immediately
+            if (e.data === YT.PlayerState.ENDED) {
+              if (videoCapTimer) { clearTimeout(videoCapTimer); videoCapTimer = null; }
+              nextStep();
+            }
+          }
+        }
+      });
+    };
+
+    function showPane(name){
+      paneSheet .classList.toggle('hidden', name !== 'sheet');
+      paneSlides.classList.toggle('hidden', name !== 'slides');
+      paneVideo .classList.toggle('hidden', name !== 'video');
+
+      if (name === 'video' && ytReady) {
+        try {
+          ytPlayer.mute();                // reliable autoplay on TV sticks
+          ytPlayer.seekTo(0, true);
+          ytPlayer.playVideo();
+        } catch(_) {}
+      } else if (ytReady) {
+        try { ytPlayer.pauseVideo(); } catch(_) {}
+      }
     }
-    function showSlides(){
-      paneSheet.classList.add('hidden');
-      paneSlides.classList.remove('hidden');
-      // Force reload with cache-busting param so autoplay/loop kicks in on Silk
-      const ts = Date.now();
-      const sep = SLIDES_URL.includes('?') ? '&' : '?';
-      slidesIF.src = SLIDES_URL + sep + 'ts=' + ts;
+
+    function scheduleNext(ms){
+      clearTimeout(cycleTimer);
+      cycleTimer = setTimeout(nextStep, ms);
     }
 
-    // Start on the Sheet (current behavior), then toggle every ROTATE_MS
-    showSheet();
-    setInterval(() => {
-      if (paneSlides.classList.contains('hidden')) showSlides();
-      else showSheet();
-    }, ROTATE_MS);
+    function nextStep(){
+      stepIndex = (stepIndex + 1) % ORDER.length;
+      const name = ORDER[stepIndex];
+      showPane(name);
 
-    // Keep the sheet refreshed in the background (optional)
+      if (name === 'video') {
+        // Advance on end; but cap duration so we never get stuck
+        if (videoCapTimer) clearTimeout(videoCapTimer);
+        videoCapTimer = setTimeout(() => {
+          // If player didn't report END (network hiccup), move on anyway
+          nextStep();
+        }, DUR.videoMax);
+      } else {
+        scheduleNext(name === 'sheet' ? DUR.sheet : DUR.slides);
+      }
+    }
+
+    // Start flow
+    showPane('sheet');
+    scheduleNext(DUR.sheet);
+
+    // Keep the sheet fresh
     if (SHEET_REFRESH_MS > 0) {
       setInterval(() => { sheetIF.src = sheetIF.src; }, SHEET_REFRESH_MS);
     }
 
     /******** WEATHER: Nashville via Open-Meteo (no API key) ********/
     const LAT = 36.1627, LON = -86.7816, TZ = 'America/Chicago';
-    const UNITS = 'fahrenheit'; // 'fahrenheit' or 'celsius'
-    const WIND  = 'mph';        // mph, kmh, ms, kn
-    const REFRESH_MS = 30 * 60 * 1000; // re-fetch every 30 min
+    const UNITS = 'fahrenheit';
+    const WIND  = 'mph';
+    const REFRESH_MS = 30 * 60 * 1000;
 
     const weatherEl = document.getElementById('weather');
-
     const WMO_MAP = [
       {codes:[0], i:'☀️', t:'Clear'},
       {codes:[1,2], i:'🌤️', t:'Partly cloudy'},
@@ -134,19 +193,9 @@
       {codes:[95], i:'⛈️', t:'Thunderstorm'},
       {codes:[96,99], i:'⛈️', t:'Thunderstorm w/ hail'},
     ];
-    function iconFor(code){
-      for (const g of WMO_MAP) if (g.codes.includes(code)) return g.i;
-      return '❓';
-    }
-    function hiClass(tempF){
-      if (tempF >= 90) return 'hot';
-      if (tempF >= 80) return 'warm';
-      return 'cool';
-    }
-    function dowLabel(dateStr){
-      const d = new Date(dateStr + 'T12:00:00'); // avoid TZ midnight issues
-      return d.toLocaleDateString('en-US', { weekday: 'short', timeZone: TZ });
-    }
+    function iconFor(code){ for (const g of WMO_MAP) if (g.codes.includes(code)) return g.i; return '❓'; }
+    function hiClass(t){ return t>=90?'hot':t>=80?'warm':'cool'; }
+    function dowLabel(s){ return new Date(s+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',timeZone:TZ}); }
 
     async function loadForecast(){
       try{
@@ -157,7 +206,7 @@
         const data = await res.json();
         const days = data.daily.time.length;
 
-        weatherEl.innerHTML = ''; // clear
+        weatherEl.innerHTML = '';
         for (let i=0; i<Math.min(7, days); i++){
           const code = data.daily.weathercode[i];
           const hi   = Math.round(data.daily.temperature_2m_max[i]);
@@ -172,8 +221,6 @@
             <div class="hi ${hiClass(hi)}">${hi}°</div>
             <div class="lo">${lo}°</div>
           `;
-          // Use 4 rows: tiny DOW at top, then icon, hi, lo
-          tile.style.gridTemplateRows = '0.5fr 1.1fr 0.8fr 0.6fr';
           weatherEl.appendChild(tile);
         }
       }catch(e){
@@ -181,10 +228,8 @@
         console.error(e);
       }
     }
-
     loadForecast();
     setInterval(loadForecast, REFRESH_MS);
   </script>
 </body>
 </html>
-
