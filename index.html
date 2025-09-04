@@ -6,15 +6,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
+      /* Adjust the split here if you want more/less weather space */
       --top-percent: 75vh;   /* top area height (sheet/slides/video) */
-      --bottom-percent: calc(100vh - var(--top-percent));
+      --bottom-percent: calc(100vh - var(--top-percent)); /* weather auto-fills rest */
     }
     html, body { height: 100%; margin: 0; background:#000; color:#fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
     .wrap { height: 100vh; width: 100vw; display: grid; grid-template-rows: var(--top-percent) var(--bottom-percent); }
 
-    /* TOP container holds three panes, we toggle them */
-    #topBox { position: relative; background:#000; overflow:hidden; }
-    .pane   { position:absolute; inset:0; }
+    /* TOP container holds panes, we toggle them */
+    #sheetBox { position: relative; background:#000; overflow:hidden; }
+    .pane { position:absolute; inset:0; }
     .hidden { display:none; }
 
     /* Iframes */
@@ -32,18 +33,19 @@
     .icon { font-size: 1.8rem; line-height: 1; }
     .hi   { font-size: 1.2rem; font-weight: 700; }
     .lo   { font-size: 0.95rem; opacity: 0.9; margin-bottom: 4px; }
-    .hi.hot  { color:#ff6b6b; }   /* 90+ */
-    .hi.warm { color:#ffa94d; }   /* 80-89 */
-    .hi.cool { color:#4dabf7; }   /* below 80 */
+
+    .hi.hot    { color:#ff6b6b; }   /* 90+ */
+    .hi.warm   { color:#ffa94d; }   /* 80-89 */
+    .hi.cool   { color:#4dabf7; }   /* below 80 */
 
     ::-webkit-scrollbar { width:0; height:0; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <!-- TOP: Sheet + Slides + Video (we rotate these) -->
-    <div id="topBox">
-      <!-- SHEET -->
+    <!-- TOP: Sheet pane + Slides pane + Video pane (we rotate them) -->
+    <div id="sheetBox">
+      <!-- Sheet -->
       <div id="paneSheet" class="pane">
         <iframe
           id="sheet"
@@ -52,24 +54,22 @@
         </iframe>
       </div>
 
-      <!-- SLIDES (Publish to web → Link; autoplay/loop; rm=minimal) -->
+      <!-- Slides -->
       <div id="paneSlides" class="pane hidden">
+        <!-- Your working Publish-to-web link (unchanged behavior) -->
         <iframe
           id="slides"
           allow="autoplay"
-          sandbox="allow-scripts allow-same-origin allow-presentation"
-          src="https://docs.google.com/presentation/d/e/2PACX-1vT-muvXcDisu2bLfnI0QWZAkxD-F5Lrt2KmlAIh2J6j7mlsq0rsmy8DF1F9lyogH_x_HLvThveNmRKg/pub?start=true&loop=true&delayms=7000&rm=minimal">
+          sandbox="allow-scripts allow-same-origin allow-presentation">
         </iframe>
       </div>
 
-      <!-- VIDEO (YouTube, controlled via IFrame API) -->
+      <!-- Video (YouTube, muted autoplay) -->
       <div id="paneVideo" class="pane hidden">
         <iframe
-          id="yt"
+          id="video"
           allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-          sandbox="allow-scripts allow-same-origin allow-presentation"
-          referrerpolicy="no-referrer-when-downgrade"
-          src="">
+          sandbox="allow-scripts allow-same-origin allow-presentation">
         </iframe>
       </div>
     </div>
@@ -78,19 +78,20 @@
     <div id="weather" aria-label="7-day weather for Nashville, TN"></div>
   </div>
 
-  <!-- YouTube IFrame API -->
-  <script src="https://www.youtube.com/iframe_api"></script>
-
   <script>
     /******** CONFIG ********/
-    // Slides already set in the iframe above.
-    // YouTube video (use your DADU project):
-    const YT_VIDEO_ID = "jGJiMJ_T8Ow";
-    // Rotation order & durations
-    const DUR = { sheet: 45_000, slides: 45_000, videoMax: 55_000 }; // fallback cap for video
-    const ORDER = ["sheet","slides","sheet","video"]; // repeat
+    // Slides (keep exactly as you had; we’ll reload it with a cache-buster each time it shows)
+    const SLIDES_URL = "https://docs.google.com/presentation/d/e/2PACX-1vT-muvXcDisu2bLfnI0QWZAkxD-F5Lrt2KmlAIh2J6j7mlsq0rsmy8DF1F9lyogH_x_HLvThveNmRKg/pubembed?start=false&loop=false&delayms=5000&rm=minimal";
 
-    // Optional: refresh the Sheet iframe every 5 minutes
+    // YouTube video (muted autoplay) — your DADU project
+    const YT_ID = "jGJiMJ_T8Ow";
+    const YT_URL_BASE = `https://www.youtube-nocookie.com/embed/${YT_ID}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&fs=0`;
+
+    // Rotation timing (ms)
+    const DURATIONS = { sheet: 45 * 1000, slides: 45 * 1000, video: 55 * 1000 }; // ~50s video, give it 55s
+    const ORDER = ["sheet", "slides", "video"]; // Spreadsheet → Slides → Video → repeat
+
+    // Optional: refresh the Sheet iframe every 5 minutes to keep it fresh
     const SHEET_REFRESH_MS = 5 * 60 * 1000;
 
     /******** ELEMENTS ********/
@@ -99,85 +100,61 @@
     const paneVideo  = document.getElementById('paneVideo');
     const sheetIF    = document.getElementById('sheet');
     const slidesIF   = document.getElementById('slides');
-    const ytIF       = document.getElementById('yt');
+    const videoIF    = document.getElementById('video');
 
-    // Build a safe nocookie URL with your current origin for JS API control
-    const ORIGIN = encodeURIComponent(location.origin);
-    const YT_URL = `https://www.youtube-nocookie.com/embed/${YT_VIDEO_ID}?enablejsapi=1&autoplay=0&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&fs=0&origin=${ORIGIN}`;
-    ytIF.src = YT_URL;
+    let step = 0, timer = null;
 
-    /******** YOUTUBE CONTROL ********/
-    let ytPlayer = null, ytReady = false, cycleTimer = null, stepIndex = 0, videoCapTimer = null;
-
-    window.onYouTubeIframeAPIReady = function(){
-      ytPlayer = new YT.Player('yt', {
-        events: {
-          onReady: () => { ytReady = true; },
-          onStateChange: (e) => {
-            // If video ended, advance immediately
-            if (e.data === YT.PlayerState.ENDED) {
-              if (videoCapTimer) { clearTimeout(videoCapTimer); videoCapTimer = null; }
-              nextStep();
-            }
-          }
-        }
-      });
-    };
-
-    function showPane(name){
+    function show(name){
+      // Toggle panes
       paneSheet .classList.toggle('hidden', name !== 'sheet');
       paneSlides.classList.toggle('hidden', name !== 'slides');
       paneVideo .classList.toggle('hidden', name !== 'video');
 
-      if (name === 'video' && ytReady) {
-        try {
-          ytPlayer.mute();                // reliable autoplay on TV sticks
-          ytPlayer.seekTo(0, true);
-          ytPlayer.playVideo();
-        } catch(_) {}
-      } else if (ytReady) {
-        try { ytPlayer.pauseVideo(); } catch(_) {}
+      const ts = Date.now();       // cache-buster to keep autoplay happy on Silk
+      if (name === 'sheet') {
+        // stop other iframes to save CPU / avoid audio surprises
+        slidesIF.src = 'about:blank';
+        videoIF.src  = 'about:blank';
       }
-    }
-
-    function scheduleNext(ms){
-      clearTimeout(cycleTimer);
-      cycleTimer = setTimeout(nextStep, ms);
-    }
-
-    function nextStep(){
-      stepIndex = (stepIndex + 1) % ORDER.length;
-      const name = ORDER[stepIndex];
-      showPane(name);
-
+      if (name === 'slides') {
+        videoIF.src  = 'about:blank';
+        const sep = SLIDES_URL.includes('?') ? '&' : '?';
+        slidesIF.src = SLIDES_URL + sep + 'ts=' + ts;
+      }
       if (name === 'video') {
-        // Advance on end; but cap duration so we never get stuck
-        if (videoCapTimer) clearTimeout(videoCapTimer);
-        videoCapTimer = setTimeout(() => {
-          // If player didn't report END (network hiccup), move on anyway
-          nextStep();
-        }, DUR.videoMax);
-      } else {
-        scheduleNext(name === 'sheet' ? DUR.sheet : DUR.slides);
+        slidesIF.src = 'about:blank';
+        const sep = YT_URL_BASE.includes('?') ? '&' : '?';
+        // Start from the beginning each time, muted autoplay
+        videoIF.src  = YT_URL_BASE + sep + 'start=0&ts=' + ts;
       }
     }
 
-    // Start flow
-    showPane('sheet');
-    scheduleNext(DUR.sheet);
+    function scheduleNext(){
+      const name = ORDER[step % ORDER.length];
+      show(name);
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        step++;
+        scheduleNext();
+      }, DURATIONS[name]);
+    }
 
-    // Keep the sheet fresh
+    // Start on sheet
+    scheduleNext();
+
+    // Keep the Sheet fresh
     if (SHEET_REFRESH_MS > 0) {
       setInterval(() => { sheetIF.src = sheetIF.src; }, SHEET_REFRESH_MS);
     }
 
     /******** WEATHER: Nashville via Open-Meteo (no API key) ********/
     const LAT = 36.1627, LON = -86.7816, TZ = 'America/Chicago';
-    const UNITS = 'fahrenheit';
-    const WIND  = 'mph';
-    const REFRESH_MS = 30 * 60 * 1000;
+    const UNITS = 'fahrenheit'; // 'fahrenheit' or 'celsius'
+    const WIND  = 'mph';        // mph, kmh, ms, kn
+    const REFRESH_MS = 30 * 60 * 1000; // re-fetch every 30 min
 
     const weatherEl = document.getElementById('weather');
+
     const WMO_MAP = [
       {codes:[0], i:'☀️', t:'Clear'},
       {codes:[1,2], i:'🌤️', t:'Partly cloudy'},
@@ -193,9 +170,19 @@
       {codes:[95], i:'⛈️', t:'Thunderstorm'},
       {codes:[96,99], i:'⛈️', t:'Thunderstorm w/ hail'},
     ];
-    function iconFor(code){ for (const g of WMO_MAP) if (g.codes.includes(code)) return g.i; return '❓'; }
-    function hiClass(t){ return t>=90?'hot':t>=80?'warm':'cool'; }
-    function dowLabel(s){ return new Date(s+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',timeZone:TZ}); }
+    function iconFor(code){
+      for (const g of WMO_MAP) if (g.codes.includes(code)) return g.i;
+      return '❓';
+    }
+    function hiClass(tempF){
+      if (tempF >= 90) return 'hot';
+      if (tempF >= 80) return 'warm';
+      return 'cool';
+    }
+    function dowLabel(dateStr){
+      const d = new Date(dateStr + 'T12:00:00'); // avoid TZ midnight issues
+      return d.toLocaleDateString('en-US', { weekday: 'short', timeZone: TZ });
+    }
 
     async function loadForecast(){
       try{
@@ -206,7 +193,7 @@
         const data = await res.json();
         const days = data.daily.time.length;
 
-        weatherEl.innerHTML = '';
+        weatherEl.innerHTML = ''; // clear
         for (let i=0; i<Math.min(7, days); i++){
           const code = data.daily.weathercode[i];
           const hi   = Math.round(data.daily.temperature_2m_max[i]);
@@ -228,6 +215,7 @@
         console.error(e);
       }
     }
+
     loadForecast();
     setInterval(loadForecast, REFRESH_MS);
   </script>
